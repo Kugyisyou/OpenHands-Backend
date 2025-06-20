@@ -6,6 +6,8 @@ import os
 import sys
 import logging
 import uvicorn
+import time
+import asyncio
 from pathlib import Path
 
 # Configure logging
@@ -298,6 +300,133 @@ if __name__ == "__main__":
             except Exception as e:
                 logger.error(f"❌ Failed to setup Fizzo automation endpoint: {e}")
                 logger.warning("⚠️ Fizzo automation will not be available")
+        
+        # Add Enhanced Monitoring endpoints
+        try:
+            logger.info("📊 Setting up enhanced monitoring...")
+            
+            # Import monitoring system
+            try:
+                from monitoring import (
+                    get_monitoring_stats, 
+                    get_health_check, 
+                    start_system_monitoring,
+                    create_monitoring_middleware
+                )
+                
+                # Add monitoring middleware
+                from starlette.middleware.base import BaseHTTPMiddleware
+                
+                class MonitoringMiddleware(BaseHTTPMiddleware):
+                    async def dispatch(self, request, call_next):
+                        start_time = time.time()
+                        
+                        try:
+                            response = await call_next(request)
+                            response_time = time.time() - start_time
+                            
+                            # Log successful requests
+                            if hasattr(request.state, 'endpoint_name'):
+                                endpoint = request.state.endpoint_name
+                            else:
+                                endpoint = str(request.url.path)
+                            
+                            logger.info(f"📊 {request.method} {endpoint} - {response.status_code} - {response_time:.3f}s")
+                            
+                            return response
+                            
+                        except Exception as e:
+                            response_time = time.time() - start_time
+                            logger.error(f"❌ {request.method} {str(request.url.path)} - ERROR - {response_time:.3f}s - {str(e)}")
+                            raise e
+                
+                app.add_middleware(MonitoringMiddleware)
+                
+                # Add monitoring endpoints
+                @app.get("/api/monitoring/stats")
+                async def monitoring_stats():
+                    """Get comprehensive monitoring statistics"""
+                    try:
+                        stats = get_monitoring_stats()
+                        return {
+                            "success": True,
+                            "data": stats,
+                            "timestamp": time.time()
+                        }
+                    except Exception as e:
+                        logger.error(f"❌ Monitoring stats error: {e}")
+                        return {
+                            "success": False,
+                            "error": str(e),
+                            "timestamp": time.time()
+                        }
+                
+                @app.get("/api/monitoring/health")
+                async def health_check():
+                    """Health check endpoint with detailed status"""
+                    try:
+                        health = get_health_check()
+                        return {
+                            "success": True,
+                            "health": health,
+                            "timestamp": time.time()
+                        }
+                    except Exception as e:
+                        logger.error(f"❌ Health check error: {e}")
+                        return {
+                            "success": False,
+                            "error": str(e),
+                            "status": "unhealthy",
+                            "timestamp": time.time()
+                        }
+                
+                @app.get("/health")
+                async def simple_health():
+                    """Simple health check for load balancers"""
+                    return {"status": "ok", "timestamp": time.time()}
+                
+                # Start system monitoring in background
+                async def start_monitoring_task():
+                    try:
+                        await start_system_monitoring(interval=30)
+                    except Exception as e:
+                        logger.error(f"❌ System monitoring error: {e}")
+                
+                # Schedule monitoring task
+                asyncio.create_task(start_monitoring_task())
+                
+                logger.info("✅ Enhanced monitoring endpoints added:")
+                logger.info("   📊 /api/monitoring/stats - Detailed statistics")
+                logger.info("   🏥 /api/monitoring/health - Health check")
+                logger.info("   ❤️ /health - Simple health check")
+                
+            except ImportError as e:
+                logger.warning(f"⚠️ Monitoring module not available: {e}")
+                logger.info("🔧 Creating basic monitoring endpoints...")
+                
+                # Basic monitoring fallback
+                @app.get("/health")
+                async def basic_health():
+                    """Basic health check"""
+                    return {"status": "ok", "timestamp": time.time()}
+                
+                @app.get("/api/monitoring/health")
+                async def basic_health_detailed():
+                    """Basic health check with more details"""
+                    return {
+                        "success": True,
+                        "health": {
+                            "status": "healthy",
+                            "uptime": "unknown",
+                            "timestamp": time.time()
+                        }
+                    }
+                
+                logger.info("✅ Basic monitoring endpoints added")
+                
+        except Exception as e:
+            logger.error(f"❌ Failed to setup monitoring: {e}")
+            logger.warning("⚠️ Enhanced monitoring will not be available")
         
         # Get configuration
         port = int(os.getenv("PORT", 7860))
