@@ -73,6 +73,9 @@ gymnasium>=0.29.0
 # ===== Fizzo Automation Support =====
 playwright>=1.40.0
 
+# ===== Enhanced Monitoring =====
+psutil>=5.9.0
+
 # ===== EXCLUDED FOR HF SPACES STABILITY =====
 # docker - Not available in HF Spaces
 # google-* - Heavy dependencies, not essential
